@@ -62,14 +62,14 @@ pipeline {
                         echo "${SSH_KEY_CONTENT}" > ~/.ssh/id_ed25519
                         chmod 600 ~/.ssh/id_ed25519
                         
-                        # Dynamically builds your ansible.cfg file and forces routing identity to ubuntu
+                        # --- FIX: Standardised to ProxyJump to force the private key cleanly into both hops ---
                         cat << EOF > ${WORKSPACE}/ansible.cfg
 [defaults]
 host_key_checking = False
 deprecation_warnings = False
 
 [ssh_connection]
-ssh_args = -o ProxyCommand="ssh -i ~/.ssh/id_ed25519 -W ubuntu@%h:%p -q -o StrictHostKeyChecking=no ubuntu@${env.BASTION_IP}"
+ssh_args = -o ProxyJump="ubuntu@${env.BASTION_IP}" -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null
 EOF
                     """
                 }
