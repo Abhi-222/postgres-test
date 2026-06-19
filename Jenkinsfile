@@ -75,21 +75,25 @@ EOF
             }
         }
 
-        stage('4. Ansible Configuration Deployment') {
+       stage('4. Ansible Configuration Deployment') {
             // Only execute database provisioning if we are deploying infrastructure
             when {
                 expression { params.PIPELINE_ACTION == 'Deploy Infrastructure' }
             }
             steps {
-                // --- FIX: Explicitly enforce AWS key binding into the shell sub-process ---
                 withEnv([
                     "AWS_ACCESS_KEY_ID=${AWS_ACCESS_KEY_ID}",
                     "AWS_SECRET_ACCESS_KEY=${AWS_SECRET_ACCESS_KEY}",
-                    "AWS_DEFAULT_REGION=${AWS_DEFAULT_REGION}"
+                    "AWS_DEFAULT_REGION=${AWS_DEFAULT_REGION}",
+                    // --- FIX: Force Ansible to use your custom config file explicitly ---
+                    "ANSIBLE_CONFIG=${WORKSPACE}/ansible.cfg"
                 ]) {
                     sh '''
                         # Installs dynamic inventory cloud dependencies on the Jenkins runner
                         pip install boto3 botocore --break-system-packages || pip install boto3 botocore
+                        
+                        # Guarantee the AWS inventory plugin collection is active on the system
+                        ansible-galaxy collection install amazon.aws
                         
                         # Runs your primary database playbook pointing exactly to the isolated workspace configuration
                         ansible-playbook -i my_inventory.aws_ec2.yml site.yml -u ubuntu --private-key=~/.ssh/id_ed25519
@@ -97,6 +101,7 @@ EOF
                 }
             }
         }
+
     }
 
     post {
