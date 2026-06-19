@@ -33,7 +33,7 @@ pipeline {
                         
                         script {
                             if (params.PIPELINE_ACTION == 'Deploy Infrastructure') {
-                                // --- FIX: Wrap execution inside an env block to guarantee TF picks up the variable ---
+                                // Wrap execution inside an env block to guarantee TF picks up the variable
                                 withEnv(["TF_VAR_ssh_public_key=${PUBLIC_KEY_CONTENT}"]) {
                                     sh 'terraform apply -auto-approve'
                                 }
@@ -49,7 +49,6 @@ pipeline {
             }
         }
 
-
         stage('3. Configure SSH Tunnel Proxy') {
             // Only execute this setup if we are deploying infrastructure
             when {
@@ -57,13 +56,14 @@ pipeline {
             }
             steps {
                 withCredentials([string(credentialsId: 'ANSIBLE_SSH_KEY', variable: 'SSH_KEY_CONTENT')]) {
+                    // --- FIX: Kept everything perfectly consolidated inside standard shell instructions ---
                     sh """
                         mkdir -p ~/.ssh
                         echo "${SSH_KEY_CONTENT}" > ~/.ssh/id_ed25519
                         chmod 600 ~/.ssh/id_ed25519
                         
-                        # --- FIX: Overwrite the root ansible.cfg instead of a nested subdirectory ---
-                        cat <<EOF > ./ansible.cfg
+                        # Overwrite the root ansible.cfg using Jenkins system workspace pathing rules
+                        cat << 'EOF' > "${WORKSPACE}/ansible.cfg"
 [defaults]
 host_key_checking = False
 deprecation_warnings = False
@@ -86,8 +86,8 @@ EOF
                     # Installs dynamic inventory cloud dependencies on the Jenkins runner
                     pip install boto3 botocore --break-system-packages || pip install boto3 botocore
                     
-                    # Runs your primary database playbook
-                    ansible-playbook -i my_inventory.aws_ec2.yml site.yml -u ubuntu
+                    # Runs your primary database playbook using your local workspace configuration
+                    ansible-playbook -i my_inventory.aws_ec2.yml site.yml -u ubuntu --private-key=~/.ssh/id_ed25519
                 '''
             }
         }
