@@ -62,14 +62,14 @@ pipeline {
                         echo "${SSH_KEY_CONTENT}" > ~/.ssh/id_ed25519
                         chmod 600 ~/.ssh/id_ed25519
                         
-                        # Dynamically builds your ansible.cfg file and injects the live Bastion IP
+                        # Dynamically builds your ansible.cfg file and forces routing identity to ubuntu
                         cat << EOF > ${WORKSPACE}/ansible.cfg
 [defaults]
 host_key_checking = False
 deprecation_warnings = False
 
 [ssh_connection]
-ssh_args = -o ProxyCommand="ssh -i ~/.ssh/id_ed25519 -W %h:%p -q -o StrictHostKeyChecking=no ubuntu@${env.BASTION_IP}"
+ssh_args = -o ProxyCommand="ssh -i ~/.ssh/id_ed25519 -W ubuntu@%h:%p -q -o StrictHostKeyChecking=no ubuntu@${env.BASTION_IP}"
 EOF
                     """
                 }
@@ -82,7 +82,7 @@ EOF
                 expression { params.PIPELINE_ACTION == 'Deploy Infrastructure' }
             }
             steps {
-                // Explicitly enforce AWS key binding into the shell sub-process
+                // Explicitly enforce AWS key and config binding into the shell sub-process
                 withEnv([
                     "AWS_ACCESS_KEY_ID=${AWS_ACCESS_KEY_ID}",
                     "AWS_SECRET_ACCESS_KEY=${AWS_SECRET_ACCESS_KEY}",
