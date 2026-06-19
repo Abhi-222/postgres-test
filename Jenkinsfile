@@ -56,13 +56,14 @@ pipeline {
                 expression { params.PIPELINE_ACTION == 'Deploy Infrastructure' }
             }
             steps {
-                withCredentials([string(credentialsId: 'ANSIBLE_SSH_KEY', variable: 'SSH_KEY_CONTENT')]) {
+                // --- FIX: Using native file provider handler to prevent string formatting/libcrypto corruption ---
+                withCredentials([file(credentialsId: 'ANSIBLE_SSH_KEY', variable: 'SSH_KEY_FILE')]) {
                     sh """
                         mkdir -p ~/.ssh
-                        echo "${SSH_KEY_CONTENT}" > ~/.ssh/id_ed25519
+                        cp "${SSH_KEY_FILE}" ~/.ssh/id_ed25519
                         chmod 600 ~/.ssh/id_ed25519
                         
-                        # --- FIX: Standardised to ProxyJump to force the private key cleanly into both hops ---
+                        # Dynamically builds your proxy configurations using clean workspace injection rules
                         cat << EOF > ${WORKSPACE}/ansible.cfg
 [defaults]
 host_key_checking = False
