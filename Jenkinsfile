@@ -27,23 +27,28 @@ pipeline {
 
         stage('2. Infrastructure Control') {
             steps {
-                dir('terraform') { 
-                    sh 'terraform init'
-                    
-                    script {
-                        if (params.PIPELINE_ACTION == 'Deploy Infrastructure') {
-                            sh 'terraform apply -auto-approve'
-                            
-                            // Extracts the fresh Bastion public IP from Terraform output data
-                            env.BASTION_IP = sh(script: 'terraform output -raw bastion_public_ip', returnStdout: true).trim()
-                            echo "Live Cloud Bastion Entrypoint IP: ${env.BASTION_IP}"
-                        } else {
-                            sh 'terraform destroy -auto-approve'
+                withCredentials([string(credentialsId: 'ANSIBLE_SSH_PUBLIC_KEY', variable: 'PUBLIC_KEY_CONTENT')]) {
+                    dir('terraform') { 
+                        sh 'terraform init'
+                        
+                        script {
+                            if (params.PIPELINE_ACTION == 'Deploy Infrastructure') {
+                                // --- FIX: Wrap execution inside an env block to guarantee TF picks up the variable ---
+                                withEnv(["TF_VAR_ssh_public_key=${PUBLIC_KEY_CONTENT}"]) {
+                                    sh 'terraform apply -auto-approve'
+                                }
+                                
+                                env.BASTION_IP = sh(script: 'terraform output -raw bastion_public_ip', returnStdout: true).trim()
+                                echo "Live Cloud Bastion Entrypoint IP: ${env.BASTION_IP}"
+                            } else {
+                                sh 'terraform destroy -auto-approve'
+                            }
                         }
                     }
                 }
             }
         }
+
 
         stage('3. Configure SSH Tunnel Proxy') {
             // Only execute this setup if we are deploying infrastructure
