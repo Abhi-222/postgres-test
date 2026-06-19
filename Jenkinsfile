@@ -50,7 +50,7 @@ pipeline {
             }
         }
 
-        stage('3. Configure SSH Tunnel Proxy') {
+         stage('3. Configure SSH Tunnel Proxy') {
             when {
                 expression { params.PIPELINE_ACTION == 'Deploy Infrastructure' }
             }
@@ -63,9 +63,8 @@ host_key_checking = False
 deprecation_warnings = False
 
 [ssh_connection]
-# Matches internal private IPs (10.*) and routes them through your live Bastion IP
-ssh_args = -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null
-sh -c 'if [ "\$(echo \$0 | cut -d. -f1)" = "10" ]; then echo "-o ProxyJump=ubuntu@${env.BASTION_IP} -o IdentityFile=${SSH_KEY_PATH}"; fi'
+# Native OpenSSH configuration: applies proxy rules safely to internal 10.x backend nodes
+ssh_args = -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null -o Match="Host 10.*" -o ProxyJump="ubuntu@${env.BASTION_IP}" -o IdentityFile="${SSH_KEY_PATH}"
 EOF
                     """
                 }
