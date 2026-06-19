@@ -24,3 +24,4 @@ keyed_groups:
     prefix: role
   - key: ec2_tags['Environment']
     prefix: env
+
