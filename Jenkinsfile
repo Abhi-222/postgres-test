@@ -56,14 +56,14 @@ pipeline {
             }
             steps {
                 withCredentials([string(credentialsId: 'ANSIBLE_SSH_KEY', variable: 'SSH_KEY_CONTENT')]) {
-                    // --- FIX: Kept everything perfectly consolidated inside standard shell instructions ---
+                    // --- FIX: All commands and comments are safely grouped inside single sh block executions ---
                     sh """
                         mkdir -p ~/.ssh
                         echo "${SSH_KEY_CONTENT}" > ~/.ssh/id_ed25519
                         chmod 600 ~/.ssh/id_ed25519
                         
-                        # Overwrite the root ansible.cfg using Jenkins system workspace pathing rules
-                        cat << 'EOF' > "${WORKSPACE}/ansible.cfg"
+                        # Overwrite the root ansible.cfg using Jenkins system workspace paths
+                        cat << 'EOF' > \${WORKSPACE}/ansible.cfg
 [defaults]
 host_key_checking = False
 deprecation_warnings = False
@@ -86,7 +86,7 @@ EOF
                     # Installs dynamic inventory cloud dependencies on the Jenkins runner
                     pip install boto3 botocore --break-system-packages || pip install boto3 botocore
                     
-                    # Runs your primary database playbook using your local workspace configuration
+                    # Runs your primary database playbook pointing exactly to the isolated workspace configuration
                     ansible-playbook -i my_inventory.aws_ec2.yml site.yml -u ubuntu --private-key=~/.ssh/id_ed25519
                 '''
             }
