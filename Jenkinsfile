@@ -74,25 +74,26 @@ EOF
                 expression { params.PIPELINE_ACTION == 'Deploy Infrastructure' }
             }
             steps {
-                // --- THE KEY FIX: Loads the key cleanly into memory to bypass libcrypto errors ---
-                sshagent(['ANSIBLE_SSH_KEY']) {
-                    withEnv([
-                        "AWS_ACCESS_KEY_ID=${AWS_ACCESS_KEY_ID}",
-                        "AWS_SECRET_ACCESS_KEY=${AWS_SECRET_ACCESS_KEY}",
-                        "AWS_DEFAULT_REGION=${AWS_DEFAULT_REGION}",
-                        "ANSIBLE_CONFIG=${WORKSPACE}/ansible.cfg"
-                    ]) {
-                        sh '''
-                            pip install boto3 botocore --break-system-packages || pip install boto3 botocore
-                            ansible-galaxy collection install amazon.aws
-                            
-                            # Runs your playbook utilizing the native secure memory ssh-agent context
-                            ansible-playbook -i my_inventory.aws_ec2.yml site.yml -u ubuntu
-                        '''
-                    }
+                withEnv([
+                    "AWS_ACCESS_KEY_ID=${AWS_ACCESS_KEY_ID}",
+                    "AWS_SECRET_ACCESS_KEY=${AWS_SECRET_ACCESS_KEY}",
+                    "AWS_DEFAULT_REGION=${AWS_DEFAULT_REGION}",
+                    "ANSIBLE_CONFIG=${WORKSPACE}/ansible.cfg",
+                    
+                    // --- JUST ADD THESE TWO LINES BELOW ---
+                    "ANSIBLE_WORLD_READABLE_TEMP_FILES=True",
+                    "ANSIBLE_REMOTE_TMP=/tmp"
+                ]) {
+                    sh '''
+                        pip install boto3 botocore --break-system-packages || pip install boto3 botocore
+                        ansible-galaxy collection install amazon.aws
+                        
+                        ansible-playbook -i my_inventory.aws_ec2.yml site.yml -u ubuntu --private-key=${WORKSPACE}/.ssh/id_ed25519
+                    '''
                 }
             }
         }
+
 
     }
 
