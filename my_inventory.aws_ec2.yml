@@ -10,18 +10,19 @@ filters:
 # Tell Ansible to use the Public IP or Private IP to SSH into the server
 hostnames:
   - ip-address
+  - private-ip-address
 
 # Explicitly binds the connection target variable to the retrieved network interface
 compose:
-  ansible_host: ip_address
+  ansible_host: private_ip_address
 
 # Turn off the legacy tags warning that clutter your screen
 include_deprecated_tags: false
 
 # Automatically create Ansible groups based on the AWS Tags you assign to your instances
 keyed_groups:
-  - key: ec2_tags['Role']
+  - key: tags.Role
     prefix: role
-  - key: ec2_tags['Environment']
+  - key: tags.Environment
     prefix: env
 
