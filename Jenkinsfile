@@ -50,28 +50,22 @@ pipeline {
             }
         }
 
-                stage('3. Configure SSH Tunnel Proxy') {
+        stage('3. Configure SSH Tunnel Proxy') {
             when {
                 expression { params.PIPELINE_ACTION == 'Deploy Infrastructure' }
             }
             steps {
-                // Reads your credential back as a standard text string variable
-                withCredentials([string(credentialsId: 'ANSIBLE_SSH_KEY', variable: 'SSH_KEY_CONTENT')]) {
-                    sh """
-                        mkdir -p ~/.ssh
-                        echo "${SSH_KEY_CONTENT}" > ~/.ssh/id_ed25519
-                        chmod 600 ~/.ssh/id_ed25519
-                        
-                        cat << EOF > ${WORKSPACE}/ansible.cfg
+                // Generates the proxy routing configuration file cleanly without writing key files
+                sh """
+                    cat << EOF > ${WORKSPACE}/ansible.cfg
 [defaults]
 host_key_checking = False
 deprecation_warnings = False
 
 [ssh_connection]
-ssh_args = -o ProxyJump="ubuntu@${env.BASTION_IP}" -i ~/.ssh/id_ed25519 -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null
+ssh_args = -o ProxyJump="ubuntu@${env.BASTION_IP}" -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null
 EOF
-                    """
-                }
+                """
             }
         }
 
@@ -80,19 +74,22 @@ EOF
                 expression { params.PIPELINE_ACTION == 'Deploy Infrastructure' }
             }
             steps {
-                withEnv([
-                    "AWS_ACCESS_KEY_ID=${AWS_ACCESS_KEY_ID}",
-                    "AWS_SECRET_ACCESS_KEY=${AWS_SECRET_ACCESS_KEY}",
-                    "AWS_DEFAULT_REGION=${AWS_DEFAULT_REGION}",
-                    "ANSIBLE_CONFIG=${WORKSPACE}/ansible.cfg"
-                ]) {
-                    sh '''
-                        pip install boto3 botocore --break-system-packages || pip install boto3 botocore
-                        ansible-galaxy collection install amazon.aws
-                        
-                        # Uses the verified local file path we just created in Stage 3
-                        ansible-playbook -i my_inventory.aws_ec2.yml site.yml -u ubuntu --private-key=~/.ssh/id_ed25519
-                    '''
+                // --- THE KEY FIX: Loads the key cleanly into memory to bypass libcrypto errors ---
+                sshagent(['ANSIBLE_SSH_KEY']) {
+                    withEnv([
+                        "AWS_ACCESS_KEY_ID=${AWS_ACCESS_KEY_ID}",
+                        "AWS_SECRET_ACCESS_KEY=${AWS_SECRET_ACCESS_KEY}",
+                        "AWS_DEFAULT_REGION=${AWS_DEFAULT_REGION}",
+                        "ANSIBLE_CONFIG=${WORKSPACE}/ansible.cfg"
+                    ]) {
+                        sh '''
+                            pip install boto3 botocore --break-system-packages || pip install boto3 botocore
+                            ansible-galaxy collection install amazon.aws
+                            
+                            # Runs your playbook utilizing the native secure memory ssh-agent context
+                            ansible-playbook -i my_inventory.aws_ec2.yml site.yml -u ubuntu
+                        '''
+                    }
                 }
             }
         }
