@@ -11,7 +11,7 @@ module "production_postgres" {
   vpc_cidr      = "10.50.0.0/16"
 
   # This MUST be inside the module block braces
-  ssh_public_key = file("~/.ssh/id_ed25519.pub") 
+  ssh_public_key = var.ssh_public_key 
 } 
 
 # Access module outputs at the root level

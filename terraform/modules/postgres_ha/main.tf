@@ -2,7 +2,7 @@
 # 0. SSH KEY PAIR
 # ==========================================
 resource "aws_key_pair" "deployer" {
-  key_name   = "${var.environment}-postgres-ha-key"
+  key_name   = "postgres-ha-key"
   public_key = var.ssh_public_key
 }
 
