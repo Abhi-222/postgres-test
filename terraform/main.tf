@@ -3,7 +3,7 @@
 # ====================================================================
 variable "ssh_public_key" {
   type        = string
-  description = "ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIK8uF0jlBO8sAT4bgFH1jieZST+7aXk8Z5E863xWkZhL sa>
+  description = "ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIK8uF0jlBO8sAT4bgFH1jieZST+7aXk8Z5E863xWkZhL sahil@sahil"
 }
 
 # Provider configuration follows right after
