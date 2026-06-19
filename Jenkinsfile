@@ -56,21 +56,20 @@ pipeline {
                 expression { params.PIPELINE_ACTION == 'Deploy Infrastructure' }
             }
             steps {
-                // --- FIX: Using native file provider handler to prevent string formatting/libcrypto corruption ---
+                // Reads the clean secret file from its temporary download location directly
                 withCredentials([file(credentialsId: 'ANSIBLE_SSH_KEY', variable: 'SSH_KEY_FILE')]) {
                     sh """
-                        mkdir -p ~/.ssh
-                        cp "${SSH_KEY_FILE}" ~/.ssh/id_ed25519
-                        chmod 600 ~/.ssh/id_ed25519
-                        
-                        # Dynamically builds your proxy configurations using clean workspace injection rules
+                        # --- FIX 1: Enforce strict permissions on the temporary credential path directly ---
+                        chmod 400 "${SSH_KEY_FILE}"
+
+                        # We point OpenSSH directly to the secure path variable using the -i flag
                         cat << EOF > ${WORKSPACE}/ansible.cfg
 [defaults]
 host_key_checking = False
 deprecation_warnings = False
 
 [ssh_connection]
-ssh_args = -o ProxyJump="ubuntu@${env.BASTION_IP}" -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null
+ssh_args = -o ProxyJump="ubuntu@${env.BASTION_IP}" -i ${SSH_KEY_FILE} -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null
 EOF
                     """
                 }
@@ -83,23 +82,28 @@ EOF
                 expression { params.PIPELINE_ACTION == 'Deploy Infrastructure' }
             }
             steps {
-                // Explicitly enforce AWS key and config binding into the shell sub-process
-                withEnv([
-                    "AWS_ACCESS_KEY_ID=${AWS_ACCESS_KEY_ID}",
-                    "AWS_SECRET_ACCESS_KEY=${AWS_SECRET_ACCESS_KEY}",
-                    "AWS_DEFAULT_REGION=${AWS_DEFAULT_REGION}",
-                    "ANSIBLE_CONFIG=${WORKSPACE}/ansible.cfg"
-                ]) {
-                    sh '''
-                        # Installs dynamic inventory cloud dependencies on the Jenkins runner
-                        pip install boto3 botocore --break-system-packages || pip install boto3 botocore
-                        
-                        # Guarantee the AWS inventory plugin collection is active on the system
-                        ansible-galaxy collection install amazon.aws
-                        
-                        # Runs your primary database playbook pointing exactly to the isolated workspace configuration
-                        ansible-playbook -i my_inventory.aws_ec2.yml site.yml -u ubuntu --private-key=~/.ssh/id_ed25519
-                    '''
+                // We wrap this inside the file credentials block again to keep the key file alive during execution
+                withCredentials([file(credentialsId: 'ANSIBLE_SSH_KEY', variable: 'SSH_KEY_FILE')]) {
+                    withEnv([
+                        "AWS_ACCESS_KEY_ID=${AWS_ACCESS_KEY_ID}",
+                        "AWS_SECRET_ACCESS_KEY=${AWS_SECRET_ACCESS_KEY}",
+                        "AWS_DEFAULT_REGION=${AWS_DEFAULT_REGION}",
+                        "ANSIBLE_CONFIG=${WORKSPACE}/ansible.cfg"
+                    ]) {
+                        sh """
+                            # --- FIX 2: Enforce permissions inside this stage's shell context as well ---
+                            chmod 400 "${SSH_KEY_FILE}"
+
+                            # Installs dynamic inventory cloud dependencies on the Jenkins runner
+                            pip install boto3 botocore --break-system-packages || pip install boto3 botocore
+                            
+                            # Guarantee the AWS inventory plugin collection is active on the system
+                            ansible-galaxy collection install amazon.aws
+                            
+                            # Uses the clean, authenticated file variable directly for the connection
+                            ansible-playbook -i my_inventory.aws_ec2.yml site.yml -u ubuntu --private-key=${SSH_KEY_FILE}
+                        """
+                    }
                 }
             }
         }
