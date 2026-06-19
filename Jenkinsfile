@@ -38,6 +38,7 @@ pipeline {
                                     sh 'terraform apply -auto-approve'
                                 }
                                 
+                                // Extracts the fresh Bastion public IP from Terraform output data
                                 env.BASTION_IP = sh(script: 'terraform output -raw bastion_public_ip', returnStdout: true).trim()
                                 echo "Live Cloud Bastion Entrypoint IP: ${env.BASTION_IP}"
                             } else {
@@ -61,8 +62,8 @@ pipeline {
                         echo "${SSH_KEY_CONTENT}" > ~/.ssh/id_ed25519
                         chmod 600 ~/.ssh/id_ed25519
                         
-                        # Overwrite the root ansible.cfg using Jenkins system workspace paths
-                        cat << 'EOF' > \${WORKSPACE}/ansible.cfg
+                        # Dynamically builds your ansible.cfg file and injects the live Bastion IP
+                        cat << EOF > ${WORKSPACE}/ansible.cfg
 [defaults]
 host_key_checking = False
 deprecation_warnings = False
@@ -75,17 +76,17 @@ EOF
             }
         }
 
-       stage('4. Ansible Configuration Deployment') {
+        stage('4. Ansible Configuration Deployment') {
             // Only execute database provisioning if we are deploying infrastructure
             when {
                 expression { params.PIPELINE_ACTION == 'Deploy Infrastructure' }
             }
             steps {
+                // Explicitly enforce AWS key binding into the shell sub-process
                 withEnv([
                     "AWS_ACCESS_KEY_ID=${AWS_ACCESS_KEY_ID}",
                     "AWS_SECRET_ACCESS_KEY=${AWS_SECRET_ACCESS_KEY}",
                     "AWS_DEFAULT_REGION=${AWS_DEFAULT_REGION}",
-                    // --- FIX: Force Ansible to use your custom config file explicitly ---
                     "ANSIBLE_CONFIG=${WORKSPACE}/ansible.cfg"
                 ]) {
                     sh '''
@@ -101,7 +102,6 @@ EOF
                 }
             }
         }
-
     }
 
     post {
