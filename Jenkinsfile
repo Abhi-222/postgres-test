@@ -56,7 +56,6 @@ pipeline {
             }
             steps {
                 withCredentials([string(credentialsId: 'ANSIBLE_SSH_KEY', variable: 'SSH_KEY_CONTENT')]) {
-                    // --- FIX: All commands and comments are safely grouped inside single sh block executions ---
                     sh """
                         mkdir -p ~/.ssh
                         echo "${SSH_KEY_CONTENT}" > ~/.ssh/id_ed25519
@@ -76,14 +75,13 @@ EOF
             }
         }
 
-
         stage('4. Ansible Configuration Deployment') {
             // Only execute database provisioning if we are deploying infrastructure
             when {
                 expression { params.PIPELINE_ACTION == 'Deploy Infrastructure' }
             }
             steps {
-                // --- FIX: Force AWS credentials directly into the Ansible shell run ---
+                // --- FIX: Explicitly enforce AWS key binding into the shell sub-process ---
                 withEnv([
                     "AWS_ACCESS_KEY_ID=${AWS_ACCESS_KEY_ID}",
                     "AWS_SECRET_ACCESS_KEY=${AWS_SECRET_ACCESS_KEY}",
@@ -99,7 +97,7 @@ EOF
                 }
             }
         }
-
+    }
 
     post {
         success {
