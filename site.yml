@@ -1,0 +1,11 @@
+---
+- name: Deploy Secure Production PostgreSQL Cluster
+  hosts: role_primary
+  become: yes
+  vars:
+    # Explicitly tells Ansible to use your modern Ed25519 private key
+    ansible_ssh_private_key_file: "~/.ssh/id_ed25519"
+    # --- BYPASS LOCAL PERMISSION CHECKS ---
+    ansible_ssh_extra_args: "-o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null"
+  roles:
+    - postgres_prod

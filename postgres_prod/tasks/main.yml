@@ -1,0 +1,107 @@
+#SPDX-License-Identifier: MIT-0
+---
+# tasks file for postgres_prod
+
+# 1. Fresh Installation
+- name: Update apt package cache
+  apt:
+    update_cache: yes
+    cache_valid_time: 3600
+
+- name: Install PostgreSQL and dependencies
+  apt:
+    name:
+      - "postgresql-{{ db_version }}"
+      - postgresql-contrib
+      - python3-psycopg2
+    state: present
+
+- name: Ensure PostgreSQL service is running on boot
+  service:
+    name: postgresql
+    state: started
+    enabled: yes
+
+# 2. Database & User Creation
+- name: Create application database user
+  community.postgresql.postgresql_user:
+    name: "{{ db_user }}"
+    password: "{{ db_password }}"
+    role_attr_flags: "CREATEDB,NOSUPERUSER"
+  become: yes
+  become_user: postgres
+
+- name: Create application database
+  community.postgresql.postgresql_db:
+    name: "{{ db_name }}"
+    owner: "{{ db_user }}"
+  become: yes
+  become_user: postgres
+
+# 3. Networking & Security Configurations
+- name: Configure PostgreSQL to listen on all network interfaces
+  lineinfile:
+    path: "/etc/postgresql/{{ db_version }}/main/postgresql.conf"
+    regexp: '^#?listen_addresses\s*='
+    line: "listen_addresses = '*'"
+  notify: Restart PostgreSQL
+
+- name: Create self-signed SSL Certificate
+  command: >
+    openssl req -new -x509 -days 365 -nodes -text
+    -out /etc/postgresql/{{ db_version }}/main/server.crt
+    -keyout /etc/postgresql/{{ db_version }}/main/server.key
+    -subj "/CN={{ ansible_host }}"
+  args:
+    creates: "/etc/postgresql/{{ db_version }}/main/server.crt"
+
+- name: Set strict file permissions on the SSL key files
+  file:
+    path: "{{ item }}"
+    owner: postgres
+    group: postgres
+    mode: '0600'
+  loop:
+    - "/etc/postgresql/{{ db_version }}/main/server.crt"
+    - "/etc/postgresql/{{ db_version }}/main/server.key"
+
+- name: Turn on SSL in postgresql.conf
+  lineinfile:
+    path: "/etc/postgresql/{{ db_version }}/main/postgresql.conf"
+    regexp: '^#?ssl\s*='
+    line: "ssl = on"
+  notify: Restart PostgreSQL
+
+- name: Require SSL for remote connections in pg_hba.conf
+  lineinfile:
+    path: "/etc/postgresql/{{ db_version }}/main/pg_hba.conf"
+    line: "hostssl    all             all             {{ allowed_app_subnet }}            scram-sha-256"
+  notify: Restart PostgreSQL
+
+# 4. Extensions & Backups
+- name: Enable performance extensions
+  community.postgresql.postgresql_ext:
+    name: "{{ item }}"
+    db: "{{ db_name }}"
+    state: present
+  become: yes
+  become_user: postgres
+  loop:
+    - pg_stat_statements
+    - uuid-ossp
+
+- name: Ensure secure backup directory exists
+  file:
+    path: "{{ backup_dir }}"
+    state: directory
+    owner: postgres
+    group: postgres
+    mode: '0700'
+
+- name: Schedule automated database dump at 2:00 AM every night
+  cron:
+    name: "Daily PostgreSQL Database Backup"
+    user: "postgres"
+    minute: "0"
+    hour: "2"
+    job: "/usr/bin/pg_dump -F c {{ db_name }} > {{ backup_dir }}/{{ db_name }}_$(date +\\%F).bak"

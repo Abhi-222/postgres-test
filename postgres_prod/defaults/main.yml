@@ -1,0 +1,9 @@
+#SPDX-License-Identifier: MIT-0
+---
+# defaults file for postgres_prod
+db_version: "18"
+db_name: "myapp_db"
+db_user: "sahil_admin"
+db_password: "SecurePassword123!"
+allowed_app_subnet: "192.168.1.0/24"
+backup_dir: "/var/backups/postgres"
