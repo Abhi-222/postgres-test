@@ -9,7 +9,6 @@ filters:
 
 # Tell Ansible to use the Public IP or Private IP to SSH into the server
 hostnames:
-  - ip-address
   - private-ip-address
 
 # Explicitly binds the connection target variable to the retrieved network interface

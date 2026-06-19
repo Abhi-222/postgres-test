@@ -55,19 +55,23 @@ pipeline {
                 expression { params.PIPELINE_ACTION == 'Deploy Infrastructure' }
             }
             steps {
-                // Generates the proxy routing configuration file cleanly without writing key files
-                sh """
-                    cat << EOF > ${WORKSPACE}/ansible.cfg
+                withCredentials([sshUserPrivateKey(credentialsId: 'ANSIBLE_SSH_KEY', privateKeyVariable: 'SSH_KEY_PATH')]) {
+                    sh """
+                        cat << EOF > ${WORKSPACE}/ansible.cfg
 [defaults]
 host_key_checking = False
 deprecation_warnings = False
 
 [ssh_connection]
-ssh_args = -o ProxyJump="ubuntu@${env.BASTION_IP}" -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null
+# Matches internal private IPs (10.*) and routes them through your live Bastion IP
+ssh_args = -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null
+sh -c 'if [ "\$(echo \$0 | cut -d. -f1)" = "10" ]; then echo "-o ProxyJump=ubuntu@${env.BASTION_IP} -o IdentityFile=${SSH_KEY_PATH}"; fi'
 EOF
-                """
+                    """
+                }
             }
         }
+
 
         stage('4. Ansible Configuration Deployment') {
             when {
