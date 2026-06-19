@@ -28,3 +28,10 @@ output "app_bastion_ip" {
   value = module.production_postgres.bastion_public_ip
 }
 
+# ====================================================================
+# THE BRIDGE OUTPUT: Passes the IP from the module up to Jenkins
+# ====================================================================
+output "bastion_public_ip" {
+  value       = module.production_postgres.app_bastion_ip
+  description = "Exposes the child module bastion IP directly to the Jenkins runner"
+}
