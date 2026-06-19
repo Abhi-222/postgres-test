@@ -76,22 +76,30 @@ EOF
             }
         }
 
+
         stage('4. Ansible Configuration Deployment') {
             // Only execute database provisioning if we are deploying infrastructure
             when {
                 expression { params.PIPELINE_ACTION == 'Deploy Infrastructure' }
             }
             steps {
-                sh '''
-                    # Installs dynamic inventory cloud dependencies on the Jenkins runner
-                    pip install boto3 botocore --break-system-packages || pip install boto3 botocore
-                    
-                    # Runs your primary database playbook pointing exactly to the isolated workspace configuration
-                    ansible-playbook -i my_inventory.aws_ec2.yml site.yml -u ubuntu --private-key=~/.ssh/id_ed25519
-                '''
+                // --- FIX: Force AWS credentials directly into the Ansible shell run ---
+                withEnv([
+                    "AWS_ACCESS_KEY_ID=${AWS_ACCESS_KEY_ID}",
+                    "AWS_SECRET_ACCESS_KEY=${AWS_SECRET_ACCESS_KEY}",
+                    "AWS_DEFAULT_REGION=${AWS_DEFAULT_REGION}"
+                ]) {
+                    sh '''
+                        # Installs dynamic inventory cloud dependencies on the Jenkins runner
+                        pip install boto3 botocore --break-system-packages || pip install boto3 botocore
+                        
+                        # Runs your primary database playbook pointing exactly to the isolated workspace configuration
+                        ansible-playbook -i my_inventory.aws_ec2.yml site.yml -u ubuntu --private-key=~/.ssh/id_ed25519
+                    '''
+                }
             }
         }
-    }
+
 
     post {
         success {
