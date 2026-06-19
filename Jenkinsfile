@@ -50,12 +50,13 @@ pipeline {
             }
         }
 
-         stage('3. Configure SSH Tunnel Proxy') {
+        stage('3. Configure SSH Tunnel Proxy') {
             when {
                 expression { params.PIPELINE_ACTION == 'Deploy Infrastructure' }
             }
             steps {
-                withCredentials([sshUserPrivateKey(credentialsId: 'ANSIBLE_SSH_KEY', privateKeyVariable: 'SSH_KEY_PATH')]) {
+                // Uses 'keyFileVariable' to extract the key to a safe runtime-managed file path
+                withCredentials([sshUserPrivateKey(credentialsId: 'ANSIBLE_SSH_KEY', keyFileVariable: 'SSH_KEY_PATH')]) {
                     sh """
                         cat << EOF > ${WORKSPACE}/ansible.cfg
 [defaults]
@@ -71,33 +72,31 @@ EOF
             }
         }
 
-
         stage('4. Ansible Configuration Deployment') {
             when {
                 expression { params.PIPELINE_ACTION == 'Deploy Infrastructure' }
             }
             steps {
-                withEnv([
-                    "AWS_ACCESS_KEY_ID=${AWS_ACCESS_KEY_ID}",
-                    "AWS_SECRET_ACCESS_KEY=${AWS_SECRET_ACCESS_KEY}",
-                    "AWS_DEFAULT_REGION=${AWS_DEFAULT_REGION}",
-                    "ANSIBLE_CONFIG=${WORKSPACE}/ansible.cfg",
-                    
-                    // --- JUST ADD THESE TWO LINES BELOW ---
-                    "ANSIBLE_WORLD_READABLE_TEMP_FILES=True",
-                    "ANSIBLE_REMOTE_TMP=/tmp"
-                ]) {
-                    sh '''
-                        pip install boto3 botocore --break-system-packages || pip install boto3 botocore
-                        ansible-galaxy collection install amazon.aws
-                        
-                        ansible-playbook -i my_inventory.aws_ec2.yml site.yml -u ubuntu --private-key=${WORKSPACE}/.ssh/id_ed25519
-                    '''
+                withCredentials([sshUserPrivateKey(credentialsId: 'ANSIBLE_SSH_KEY', keyFileVariable: 'SSH_KEY_PATH')]) {
+                    withEnv([
+                        "AWS_ACCESS_KEY_ID=${AWS_ACCESS_KEY_ID}",
+                        "AWS_SECRET_ACCESS_KEY=${AWS_SECRET_ACCESS_KEY}",
+                        "AWS_DEFAULT_REGION=${AWS_DEFAULT_REGION}",
+                        "ANSIBLE_CONFIG=${WORKSPACE}/ansible.cfg",
+                        "ANSIBLE_WORLD_READABLE_TEMP_FILES=True",
+                        "ANSIBLE_REMOTE_TMP=/tmp"
+                    ]) {
+                        sh """
+                            pip install boto3 botocore --break-system-packages || pip install boto3 botocore
+                            ansible-galaxy collection install amazon.aws
+                            
+                            # Uses the secure temporary path string injected by Jenkins
+                            ansible-playbook -i my_inventory.aws_ec2.yml site.yml -u ubuntu --private-key=\${SSH_KEY_PATH}
+                        """
+                    }
                 }
             }
         }
-
-
     }
 
     post {
@@ -115,4 +114,3 @@ EOF
         }
     }
 }
-
