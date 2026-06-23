@@ -1,9 +1,9 @@
 ---
 # ====================================================================
-# PLAY 1: Targets ONLY your Primary Master Database Server
+# PLAY 1: Targets ONLY  Primary Master Database Server
 # ====================================================================
 - name: Deploy Secure Production PostgreSQL Primary Master
-  hosts: role_primary              # <--- Matches your Terraform tag "Role = primary"
+  hosts: role_primary              # <--- Matches our Terraform tag "Role = primary"
   become: yes
   vars:
     # Passing context to your internal tasks/main.yml file variables
@@ -12,10 +12,10 @@
     - postgres_prod
 
 # ====================================================================
-# PLAY 2: Targets ONLY your High-Availability Standby Replicas
+# PLAY 2: Targets ONLY  High-Availability Standby Replicas
 # ====================================================================
 - name: Deploy Secure Production PostgreSQL Standby Replicas
-  hosts: role_replica              # <--- Matches your Terraform tag "Role = replica"
+  hosts: role_replica              # <--- Matches our Terraform tag "Role = replica"
   become: yes
   vars:
     # Passing context to your internal tasks/main.yml file variables

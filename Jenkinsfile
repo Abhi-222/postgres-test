@@ -48,16 +48,14 @@ pipeline {
                     }
                 }
             }
-        }
-
-        stage('3. Configure SSH Tunnel Proxy') {
+        }                stage('3. Configure SSH Tunnel Proxy') {
             when {
                 expression { params.PIPELINE_ACTION == 'Deploy Infrastructure' }
             }
             steps {
-                // Uses 'keyFileVariable' to extract the key to a safe runtime-managed file path
                 withCredentials([sshUserPrivateKey(credentialsId: 'ANSIBLE_SSH_KEY', keyFileVariable: 'SSH_KEY_PATH')]) {
-                    sh """
+                    // Changed to single quotes to prevent insecure Groovy interpolation
+                    sh '''
                         cat << EOF > ${WORKSPACE}/ansible.cfg
 [defaults]
 host_key_checking = False
@@ -65,9 +63,9 @@ deprecation_warnings = False
 
 [ssh_connection]
 # Native OpenSSH configuration: applies proxy rules safely to internal 10.x backend nodes
-ssh_args = -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null -o Match="Host 10.*" -o ProxyJump="ubuntu@${env.BASTION_IP}" -o IdentityFile="${SSH_KEY_PATH}"
+ssh_args = -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null -o Match="Host 10.*" -o ProxyJump="ubuntu@${BASTION_IP}" -o IdentityFile="${SSH_KEY_PATH}"
 EOF
-                    """
+                    '''
                 }
             }
         }
@@ -86,18 +84,22 @@ EOF
                         "ANSIBLE_WORLD_READABLE_TEMP_FILES=True",
                         "ANSIBLE_REMOTE_TMP=/tmp"
                     ]) {
-                        sh """
+                        // Changed to single quotes to securely pass SSH_KEY_PATH directly to the shell
+                        sh '''
                             pip install boto3 botocore --break-system-packages || pip install boto3 botocore
                             ansible-galaxy collection install amazon.aws
                             
-                            # Uses the secure temporary path string injected by Jenkins
-                            ansible-playbook -i my_inventory.aws_ec2.yml site.yml -u ubuntu --private-key=\${SSH_KEY_PATH}
-                        """
+                            # Safely evaluated by the agent's environment at runtime
+                            ansible-playbook -i my_inventory.aws_ec2.yml site.yml -u ubuntu --private-key=$SSH_KEY_PATH
+                        '''
                     }
                 }
             }
         }
+
     }
+
+
 
     post {
         success {
