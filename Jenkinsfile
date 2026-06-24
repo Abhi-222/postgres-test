@@ -25,30 +25,31 @@ pipeline {
             }
         }
 
-        stage('2. Infrastructure Control') {
+         stage('2. Infrastructure Control') {
             steps {
                 withCredentials([string(credentialsId: 'ANSIBLE_SSH_PUBLIC_KEY', variable: 'PUBLIC_KEY_CONTENT')]) {
                     dir('terraform') { 
                         sh 'terraform init'
                         
                         script {
-                            if (params.PIPELINE_ACTION == 'Deploy Infrastructure') {
-                                // Wrap execution inside an env block to guarantee TF picks up the variable
-                                withEnv(["TF_VAR_ssh_public_key=${PUBLIC_KEY_CONTENT}"]) {
+                            // Wrap BOTH apply and destroy in withEnv so Terraform always has the required variable
+                            withEnv(["TF_VAR_ssh_public_key=${PUBLIC_KEY_CONTENT}"]) {
+                                if (params.PIPELINE_ACTION == 'Deploy Infrastructure') {
                                     sh 'terraform apply -auto-approve'
+                                    
+                                    // Extracts the fresh Bastion public IP from Terraform output data
+                                    env.BASTION_IP = sh(script: 'terraform output -raw bastion_public_ip', returnStdout: true).trim()
+                                    echo "Live Cloud Bastion Entrypoint IP: ${env.BASTION_IP}"
+                                } else {
+                                    sh 'terraform destroy -auto-approve'
                                 }
-                                
-                                // Extracts the fresh Bastion public IP from Terraform output data
-                                env.BASTION_IP = sh(script: 'terraform output -raw bastion_public_ip', returnStdout: true).trim()
-                                echo "Live Cloud Bastion Entrypoint IP: ${env.BASTION_IP}"
-                            } else {
-                                sh 'terraform destroy -auto-approve'
                             }
                         }
                     }
                 }
             }
         }
+
 
         stage('3. Configure SSH Tunnel Proxy') {
             when {
