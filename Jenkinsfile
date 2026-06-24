@@ -48,7 +48,9 @@ pipeline {
                     }
                 }
             }
-        }                stage('3. Configure SSH Tunnel Proxy') {
+        }
+
+        stage('3. Configure SSH Tunnel Proxy') {
             when {
                 expression { params.PIPELINE_ACTION == 'Deploy Infrastructure' }
             }
@@ -96,10 +98,7 @@ EOF
                 }
             }
         }
-
     }
-
-
 
     post {
         success {
