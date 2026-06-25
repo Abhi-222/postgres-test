@@ -33,3 +33,8 @@ variable "ssh_public_key" {
   description = "ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIK8uF0jlBO8sAT4bgFH1jieZST+7aXk8Z5E863xWkZhL sahil@sahil"
 }
 
+variable "allowed_app_cidr_blocks" {
+  type        = list(string)
+  default     = ["10.0.0.0/8", "192.168.0.0/16"]
+  description = "CIDR blocks allowed to connect to PostgreSQL port 5432"
+}

@@ -30,6 +30,16 @@
     role_attr_flags: "CREATEDB,NOSUPERUSER"
   become: yes
   become_user: postgres
+  when: postgres_cluster_role == 'master'
+
+- name: Create replication user
+  community.postgresql.postgresql_user:
+    name: "{{ repl_user }}"
+    password: "{{ repl_password }}"
+    role_attr_flags: "REPLICATION"
+  become: yes
+  become_user: postgres
+  when: postgres_cluster_role == 'master'
 
 - name: Create application database
   community.postgresql.postgresql_db:
@@ -37,6 +47,7 @@
     owner: "{{ db_user }}"
   become: yes
   become_user: postgres
+  when: postgres_cluster_role == 'master'
 
 # 3. Networking & Security Configurations
 - name: Configure PostgreSQL to listen on all network interfaces
@@ -72,10 +83,65 @@
     line: "ssl = on"
   notify: Restart PostgreSQL
 
+- name: Configure shared_buffers for performance (25% of 2GB RAM)
+  lineinfile:
+    path: "/etc/postgresql/{{ db_version }}/main/postgresql.conf"
+    regexp: '^#?shared_buffers\s*='
+    line: "shared_buffers = 512MB"
+  notify: Restart PostgreSQL
+
+- name: Configure work_mem for performance
+  lineinfile:
+    path: "/etc/postgresql/{{ db_version }}/main/postgresql.conf"
+    regexp: '^#?work_mem\s*='
+    line: "work_mem = 16MB"
+  notify: Restart PostgreSQL
+
+- name: Configure maintenance_work_mem for performance
+  lineinfile:
+    path: "/etc/postgresql/{{ db_version }}/main/postgresql.conf"
+    regexp: '^#?maintenance_work_mem\s*='
+    line: "maintenance_work_mem = 128MB"
+  notify: Restart PostgreSQL
+
+- name: Configure effective_cache_size for performance (75% of 2GB RAM)
+  lineinfile:
+    path: "/etc/postgresql/{{ db_version }}/main/postgresql.conf"
+    regexp: '^#?effective_cache_size\s*='
+    line: "effective_cache_size = 1536MB"
+  notify: Restart PostgreSQL
+
+- name: Configure WAL level for replication
+  lineinfile:
+    path: "/etc/postgresql/{{ db_version }}/main/postgresql.conf"
+    regexp: '^#?wal_level\s*='
+    line: "wal_level = replica"
+  notify: Restart PostgreSQL
+
+- name: Configure max WAL senders
+  lineinfile:
+    path: "/etc/postgresql/{{ db_version }}/main/postgresql.conf"
+    regexp: '^#?max_wal_senders\s*='
+    line: "max_wal_senders = 10"
+  notify: Restart PostgreSQL
+
+- name: Configure max replication slots
+  lineinfile:
+    path: "/etc/postgresql/{{ db_version }}/main/postgresql.conf"
+    regexp: '^#?max_replication_slots\s*='
+    line: "max_replication_slots = 10"
+  notify: Restart PostgreSQL
+
 - name: Require SSL for remote connections in pg_hba.conf
   lineinfile:
     path: "/etc/postgresql/{{ db_version }}/main/pg_hba.conf"
     line: "hostssl    all             all             {{ allowed_app_subnet }}            scram-sha-256"
+  notify: Restart PostgreSQL
+
+- name: Allow replication connections from replica subnet in pg_hba.conf
+  lineinfile:
+    path: "/etc/postgresql/{{ db_version }}/main/pg_hba.conf"
+    line: "hostssl    replication     {{ repl_user }}   {{ replica_subnet }}    scram-sha-256"
   notify: Restart PostgreSQL
 
 # 4. Extensions & Backups
@@ -86,6 +152,7 @@
     state: present
   become: yes
   become_user: postgres
+  when: postgres_cluster_role == 'master'
   loop:
     - pg_stat_statements
     - uuid-ossp
@@ -97,6 +164,7 @@
     owner: postgres
     group: postgres
     mode: '0700'
+  when: postgres_cluster_role == 'master'
 
 - name: Schedule automated database dump at 2:00 AM every night
   cron:
@@ -105,3 +173,43 @@
     minute: "0"
     hour: "2"
     job: "/usr/bin/pg_dump -F c {{ db_name }} > {{ backup_dir }}/{{ db_name }}_$(date +\\%F).bak"
+  when: postgres_cluster_role == 'master'
+
+# 5. Replica Streaming Initialization
+- name: Stop PostgreSQL before cloning master
+  service:
+    name: postgresql
+    state: stopped
+  when: postgres_cluster_role == 'replica'
+
+- name: Wipe current data directory on replica
+  file:
+    path: "/var/lib/postgresql/{{ db_version }}/main/"
+    state: absent
+  when: postgres_cluster_role == 'replica'
+
+- name: Recreate empty data directory with correct permissions
+  file:
+    path: "/var/lib/postgresql/{{ db_version }}/main/"
+    state: directory
+    owner: postgres
+    group: postgres
+    mode: '0700'
+  when: postgres_cluster_role == 'replica'
+
+- name: Run pg_basebackup to clone the master node
+  environment:
+    PGPASSWORD: "{{ repl_password }}"
+  command: >
+    pg_basebackup -h {{ hostvars[groups['role_primary'][0]]['ansible_host'] }} 
+    -D /var/lib/postgresql/{{ db_version }}/main 
+    -U {{ repl_user }} -vP -R -X stream -C -S {{ inventory_hostname | replace('-', '_') | replace('.', '_') }}
+  become: yes
+  become_user: postgres
+  when: postgres_cluster_role == 'replica'
+
+- name: Start PostgreSQL on Replica
+  service:
+    name: postgresql
+    state: started
+  when: postgres_cluster_role == 'replica'

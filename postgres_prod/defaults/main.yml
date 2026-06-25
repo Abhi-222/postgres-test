@@ -7,3 +7,8 @@ db_user: "sahil_admin"
 db_password: "SecurePassword123!"
 allowed_app_subnet: "192.168.1.0/24"
 backup_dir: "/var/backups/postgres"
+
+# Replication Variables
+repl_user: "replicator"
+repl_password: "ReplicationPassword123!"
+replica_subnet: "10.50.0.0/16"
