@@ -106,7 +106,7 @@ ${env.REPLICA_1_IP} ansible_user=ubuntu
 ${env.REPLICA_2_IP} ansible_user=ubuntu
 
 [all:vars]
-ansible_ssh_common_args='-o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null -o ProxyJump="ubuntu@${env.BASTION_IP} -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null"'
+ansible_ssh_common_args='-o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null -o ProxyCommand="ssh -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null -W %h:%p ubuntu@${env.BASTION_IP}"'
 EOF
                 """
                 echo '📋 Static inventory generated:'
@@ -131,7 +131,7 @@ host_key_checking = False
 deprecation_warnings = False
 
 [ssh_connection]
-ssh_args = -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null -o ProxyJump="ubuntu@${BASTION_IP} -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null" -o IdentityFile="${SSH_KEY_PATH}"
+ssh_args = -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null -o IdentityFile="${SSH_KEY_PATH}"
 EOF
                     '''
                 }
@@ -180,7 +180,7 @@ EOF
                         echo "🔍 Checking replication status on master..."
                         ssh -o StrictHostKeyChecking=no \\
                             -o UserKnownHostsFile=/dev/null \\
-                            -o ProxyJump="ubuntu@${env.BASTION_IP} -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null" \\
+                            -o ProxyCommand="ssh -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null -W %h:%p ubuntu@${env.BASTION_IP}" \\
                             -i \$SSH_KEY_PATH \\
                             ubuntu@${env.MASTER_IP} \\
                             "sudo -u postgres psql -c 'SELECT client_addr, state, sent_lsn, write_lsn FROM pg_stat_replication;'"
