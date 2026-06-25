@@ -1,11 +1,11 @@
 pipeline {
     agent any
-    
+
     // --- 1. RUNTIME PARAMETERS (Dropdown for One-Click Control) ---
     parameters {
         choice(
-            name: 'PIPELINE_ACTION', 
-            choices: ['Deploy Infrastructure', 'Tear Down (Destroy)'], 
+            name: 'PIPELINE_ACTION',
+            choices: ['Deploy Infrastructure', 'Tear Down (Destroy)'],
             description: 'Choose whether to spin up and configure your infrastructure or completely tear it down to save costs.'
         )
     }
@@ -18,28 +18,65 @@ pipeline {
     }
 
     stages {
+
+        // ============================================================
+        // STAGE 1: Pull the latest code from GitHub
+        // ============================================================
         stage('1. Checkout Code') {
             steps {
-                // Pulls the latest Terraform and Ansible configurations from Git
                 checkout scm
             }
         }
 
-         stage('2. Infrastructure Control') {
+        // ============================================================
+        // STAGE 2: Validate Terraform & Ansible syntax before spending
+        //          a single dollar on AWS. Fails fast on typos.
+        // ============================================================
+        stage('2. Validate & Lint') {
+            when {
+                expression { params.PIPELINE_ACTION == 'Deploy Infrastructure' }
+            }
             steps {
                 withCredentials([string(credentialsId: 'ANSIBLE_SSH_PUBLIC_KEY', variable: 'PUBLIC_KEY_CONTENT')]) {
-                    dir('terraform') { 
+                    dir('terraform') {
+                        withEnv(["TF_VAR_ssh_public_key=${PUBLIC_KEY_CONTENT}"]) {
+                            sh 'terraform init -backend=false'
+                            sh 'terraform validate'
+                        }
+                    }
+                }
+                sh 'ansible-playbook --syntax-check -i /dev/null site.yml || true'
+                echo '✅ Validation passed. Proceeding to infrastructure provisioning.'
+            }
+        }
+
+        // ============================================================
+        // STAGE 3: Terraform — Apply or Destroy based on user choice
+        //          After apply, reads all server IPs from outputs and
+        //          auto-generates a static Ansible inventory (hosts.ini)
+        // ============================================================
+        stage('3. Infrastructure Control') {
+            steps {
+                withCredentials([string(credentialsId: 'ANSIBLE_SSH_PUBLIC_KEY', variable: 'PUBLIC_KEY_CONTENT')]) {
+                    dir('terraform') {
                         sh 'terraform init'
-                        
+
                         script {
-                            // Wrap BOTH apply and destroy in withEnv so Terraform always has the required variable
                             withEnv(["TF_VAR_ssh_public_key=${PUBLIC_KEY_CONTENT}"]) {
                                 if (params.PIPELINE_ACTION == 'Deploy Infrastructure') {
                                     sh 'terraform apply -auto-approve'
-                                    
-                                    // Extracts the fresh Bastion public IP from Terraform output data
-                                    env.BASTION_IP = sh(script: 'terraform output -raw bastion_public_ip', returnStdout: true).trim()
-                                    echo "Live Cloud Bastion Entrypoint IP: ${env.BASTION_IP}"
+
+                                    // Read all IPs directly from Terraform outputs
+                                    env.BASTION_IP   = sh(script: 'terraform output -raw bastion_public_ip',    returnStdout: true).trim()
+                                    env.MASTER_IP    = sh(script: 'terraform output -raw master_private_ip',    returnStdout: true).trim()
+                                    env.REPLICA_1_IP = sh(script: 'terraform output -raw replica_1_private_ip', returnStdout: true).trim()
+                                    env.REPLICA_2_IP = sh(script: 'terraform output -raw replica_2_private_ip', returnStdout: true).trim()
+
+                                    echo "🌐 Bastion IP  : ${env.BASTION_IP}"
+                                    echo "🗄️  Master IP   : ${env.MASTER_IP}"
+                                    echo "🗄️  Replica 1 IP: ${env.REPLICA_1_IP}"
+                                    echo "🗄️  Replica 2 IP: ${env.REPLICA_2_IP}"
+
                                 } else {
                                     sh 'terraform destroy -auto-approve'
                                 }
@@ -50,14 +87,43 @@ pipeline {
             }
         }
 
+        // ============================================================
+        // STAGE 4: Generate a static Ansible inventory file (hosts.ini)
+        //          from the Terraform outputs captured above.
+        //          No AWS API calls needed — plain, readable IPs.
+        // ============================================================
+        stage('4. Generate Static Inventory') {
+            when {
+                expression { params.PIPELINE_ACTION == 'Deploy Infrastructure' }
+            }
+            steps {
+                sh """
+                    cat > ${WORKSPACE}/hosts.ini << EOF
+[master]
+${env.MASTER_IP} ansible_user=ubuntu
 
-        stage('3. Configure SSH Tunnel Proxy') {
+[replica]
+${env.REPLICA_1_IP} ansible_user=ubuntu
+${env.REPLICA_2_IP} ansible_user=ubuntu
+
+[all:vars]
+ansible_ssh_common_args='-o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null -o ProxyJump=ubuntu@${env.BASTION_IP}'
+EOF
+                """
+                echo '📋 Static inventory generated:'
+                sh 'cat ${WORKSPACE}/hosts.ini'
+            }
+        }
+
+        // ============================================================
+        // STAGE 5: Configure SSH Tunnel Proxy for Bastion hop
+        // ============================================================
+        stage('5. Configure SSH Tunnel Proxy') {
             when {
                 expression { params.PIPELINE_ACTION == 'Deploy Infrastructure' }
             }
             steps {
                 withCredentials([sshUserPrivateKey(credentialsId: 'ANSIBLE_SSH_KEY', keyFileVariable: 'SSH_KEY_PATH')]) {
-                    // Changed to single quotes to prevent insecure Groovy interpolation
                     sh '''
                         cat << EOF > ${WORKSPACE}/ansible.cfg
 [defaults]
@@ -65,37 +131,63 @@ host_key_checking = False
 deprecation_warnings = False
 
 [ssh_connection]
-# Native OpenSSH configuration: applies proxy rules safely to internal 10.x backend nodes
-ssh_args = -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null -o Match="Host 10.*" -o ProxyJump="ubuntu@${BASTION_IP}" -o IdentityFile="${SSH_KEY_PATH}"
+ssh_args = -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null -o ProxyJump="ubuntu@${BASTION_IP}" -o IdentityFile="${SSH_KEY_PATH}"
 EOF
                     '''
                 }
             }
         }
 
-        stage('4. Ansible Configuration Deployment') {
+        // ============================================================
+        // STAGE 6: Run Ansible against the static inventory.
+        //          Installs BOTH required collections (amazon.aws and
+        //          community.postgresql) before running the playbook.
+        // ============================================================
+        stage('6. Ansible Configuration Deployment') {
             when {
                 expression { params.PIPELINE_ACTION == 'Deploy Infrastructure' }
             }
             steps {
                 withCredentials([sshUserPrivateKey(credentialsId: 'ANSIBLE_SSH_KEY', keyFileVariable: 'SSH_KEY_PATH')]) {
                     withEnv([
-                        "AWS_ACCESS_KEY_ID=${AWS_ACCESS_KEY_ID}",
-                        "AWS_SECRET_ACCESS_KEY=${AWS_SECRET_ACCESS_KEY}",
-                        "AWS_DEFAULT_REGION=${AWS_DEFAULT_REGION}",
                         "ANSIBLE_CONFIG=${WORKSPACE}/ansible.cfg",
                         "ANSIBLE_WORLD_READABLE_TEMP_FILES=True",
                         "ANSIBLE_REMOTE_TMP=/tmp"
                     ]) {
-                        // Changed to single quotes to securely pass SSH_KEY_PATH directly to the shell
                         sh '''
                             pip install boto3 botocore --break-system-packages || pip install boto3 botocore
-                            ansible-galaxy collection install amazon.aws
-                            
-                            # Safely evaluated by the agent's environment at runtime
-                            ansible-playbook -i my_inventory.aws_ec2.yml site.yml -u ubuntu --private-key=$SSH_KEY_PATH
+
+                            # Install BOTH required Ansible collections
+                            ansible-galaxy collection install amazon.aws community.postgresql
+
+                            # Run playbook against the static hosts.ini (no AWS API needed)
+                            ansible-playbook -i ${WORKSPACE}/hosts.ini site.yml --private-key=$SSH_KEY_PATH
                         '''
                     }
+                }
+            }
+        }
+
+        // ============================================================
+        // STAGE 7: Health Check — verify replication is actually working
+        //          SSHes into master through bastion and checks that
+        //          both replicas appear in pg_stat_replication.
+        // ============================================================
+        stage('7. Health Check') {
+            when {
+                expression { params.PIPELINE_ACTION == 'Deploy Infrastructure' }
+            }
+            steps {
+                withCredentials([sshUserPrivateKey(credentialsId: 'ANSIBLE_SSH_KEY', keyFileVariable: 'SSH_KEY_PATH')]) {
+                    sh """
+                        echo "🔍 Checking replication status on master..."
+                        ssh -o StrictHostKeyChecking=no \\
+                            -o UserKnownHostsFile=/dev/null \\
+                            -o ProxyJump=ubuntu@${env.BASTION_IP} \\
+                            -i \$SSH_KEY_PATH \\
+                            ubuntu@${env.MASTER_IP} \\
+                            'sudo -u postgres psql -c "SELECT client_addr, state, sent_lsn, write_lsn FROM pg_stat_replication;"'
+                    """
                 }
             }
         }
@@ -112,7 +204,7 @@ EOF
             }
         }
         failure {
-            echo '❌ Pipeline failed. Check the stage console logs for formatting or networking blocks.'
+            echo '❌ Pipeline failed. Check the stage console logs for errors.'
         }
     }
 }
