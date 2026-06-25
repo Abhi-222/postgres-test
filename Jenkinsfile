@@ -89,8 +89,7 @@ pipeline {
 
         // ============================================================
         // STAGE 4: Generate a static Ansible inventory file (hosts.ini)
-        //          from the Terraform outputs captured above.
-        //          No AWS API calls needed — plain, readable IPs.
+        //          FIXED: Changed [role_Primary] to lowercase [role_primary]
         // ============================================================
         stage('4. Generate Static Inventory') {
             when {
@@ -99,7 +98,7 @@ pipeline {
             steps {
                 sh """
                     cat > ${WORKSPACE}/hosts.ini << EOF
-[role_Primary]
+[role_primary]
 ${env.MASTER_IP} ansible_user=ubuntu
 
 [role_replica]
@@ -107,7 +106,7 @@ ${env.REPLICA_1_IP} ansible_user=ubuntu
 ${env.REPLICA_2_IP} ansible_user=ubuntu
 
 [all:vars]
-ansible_ssh_common_args='-o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null -o ProxyJump=ubuntu@${env.BASTION_IP}'
+ansible_ssh_common_args='-o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null -o ProxyJump="ubuntu@${env.BASTION_IP} -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null"'
 EOF
                 """
                 echo '📋 Static inventory generated:'
@@ -117,6 +116,7 @@ EOF
 
         // ============================================================
         // STAGE 5: Configure SSH Tunnel Proxy for Bastion hop
+        //          FIXED: Injected strict bypass flags into ProxyJump string
         // ============================================================
         stage('5. Configure SSH Tunnel Proxy') {
             when {
@@ -131,7 +131,7 @@ host_key_checking = False
 deprecation_warnings = False
 
 [ssh_connection]
-ssh_args = -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null -o ProxyJump="ubuntu@${BASTION_IP}" -o IdentityFile="${SSH_KEY_PATH}"
+ssh_args = -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null -o ProxyJump="ubuntu@${BASTION_IP} -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null" -o IdentityFile="${SSH_KEY_PATH}"
 EOF
                     '''
                 }
@@ -140,8 +140,6 @@ EOF
 
         // ============================================================
         // STAGE 6: Run Ansible against the static inventory.
-        //          Installs BOTH required collections (amazon.aws and
-        //          community.postgresql) before running the playbook.
         // ============================================================
         stage('6. Ansible Configuration Deployment') {
             when {
@@ -170,8 +168,7 @@ EOF
 
         // ============================================================
         // STAGE 7: Health Check — verify replication is actually working
-        //          SSHes into master through bastion and checks that
-        //          both replicas appear in pg_stat_replication.
+        //          FIXED: Fixed ProxyJump inner arguments to bypass errors
         // ============================================================
         stage('7. Health Check') {
             when {
@@ -183,10 +180,10 @@ EOF
                         echo "🔍 Checking replication status on master..."
                         ssh -o StrictHostKeyChecking=no \\
                             -o UserKnownHostsFile=/dev/null \\
-                            -o ProxyJump=ubuntu@${env.BASTION_IP} \\
+                            -o ProxyJump="ubuntu@${env.BASTION_IP} -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null" \\
                             -i \$SSH_KEY_PATH \\
                             ubuntu@${env.MASTER_IP} \\
-                            'sudo -u postgres psql -c "SELECT client_addr, state, sent_lsn, write_lsn FROM pg_stat_replication;"'
+                            "sudo -u postgres psql -c 'SELECT client_addr, state, sent_lsn, write_lsn FROM pg_stat_replication;'"
                     """
                 }
             }
