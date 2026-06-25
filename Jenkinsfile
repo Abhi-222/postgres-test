@@ -99,10 +99,10 @@ pipeline {
             steps {
                 sh """
                     cat > ${WORKSPACE}/hosts.ini << EOF
-[master]
+[role_Primary]
 ${env.MASTER_IP} ansible_user=ubuntu
 
-[replica]
+[role_replica]
 ${env.REPLICA_1_IP} ansible_user=ubuntu
 ${env.REPLICA_2_IP} ansible_user=ubuntu
 
