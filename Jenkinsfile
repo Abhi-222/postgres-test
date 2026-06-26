@@ -124,16 +124,17 @@ EOF
             }
             steps {
                 withCredentials([sshUserPrivateKey(credentialsId: 'ANSIBLE_SSH_KEY', keyFileVariable: 'SSH_KEY_PATH')]) {
-                    sh '''
-                        cat << EOF > ${WORKSPACE}/ansible.cfg
+                    sh """
+                        cat << 'EOF' > ${WORKSPACE}/ansible.cfg
 [defaults]
 host_key_checking = False
 deprecation_warnings = False
 
 [ssh_connection]
+pipelining = True
 ssh_args = -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null -o IdentityFile="${SSH_KEY_PATH}"
 EOF
-                    '''
+                    """
                 }
             }
         }
