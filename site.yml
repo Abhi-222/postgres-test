@@ -16,6 +16,7 @@
 # ====================================================================
 - name: Deploy Secure Production PostgreSQL Standby Replicas
   hosts: role_replica              # <--- Matches our Terraform tag "Role = replica"
+  serial: 1                        # <--- FIX: Tells Ansible to run replicas one at a time
   become: yes
   vars:
     # Passing context to your internal tasks/main.yml file variables
