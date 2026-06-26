@@ -201,7 +201,7 @@
   environment:
     PGPASSWORD: "{{ repl_password }}"
   command: >
-    pg_basebackup -h {{ hostvars[groups['role_primary'][0]]['ansible_host'] }} 
+    pg_basebackup -h {{ groups['role_primary'][0] }} 
     -D /var/lib/postgresql/{{ db_version }}/main 
     -U {{ repl_user }} -vP -R -X stream -C -S {{ inventory_hostname | replace('-', '_') | replace('.', '_') }}
   become: yes
